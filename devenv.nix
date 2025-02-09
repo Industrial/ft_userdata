@@ -7,7 +7,7 @@
 }: let
   talib = pkgs.stdenv.mkDerivation rec {
     pname = "ta-lib";
-    version = "0.6.1";
+    version = "0.6.2";
     src = pkgs.fetchFromGitHub {
       owner = "TA-Lib";
       repo = "ta-lib";
@@ -32,6 +32,8 @@
     };
   };
 in {
+  name = "ft_userdata";
+
   # https://devenv.sh/basics/
   env.GREET = "devenv";
 
@@ -45,8 +47,15 @@ in {
   # https://devenv.sh/languages/
   # languages.rust.enable = true;
   languages = {
+    nix = {
+      enable = true;
+    };
+    shell = {
+      enable = true;
+    };
     python = {
       enable = true;
+      version = "3.12";
       libraries = [
         "${config.devenv.dotfile}/profile"
         talib
@@ -63,6 +72,10 @@ in {
     };
   };
 
+  cachix = {
+    enable = true;
+  };
+
   # https://devenv.sh/processes/
   # processes.cargo-watch.exec = "cargo-watch";
 
@@ -77,13 +90,24 @@ in {
   enterShell = ''
     hello
     git --version
+    export LD_LIBRARY_PATH=${pkgs.stdenv.cc.cc.lib}/lib/
+    export TA_LIBRARY_PATH=${talib}/lib
+    export TA_INCLUDE_PATH=${talib}/include
   '';
 
   # https://devenv.sh/tasks/
-  # tasks = {
-  #   "myproj:setup".exec = "mytool build";
-  #   "devenv:enterShell".after = [ "myproj:setup" ];
-  # };
+  tasks = {
+    # "bin:install-local" = {
+    #   exec = "bin/install-local";
+    # };
+    # "devenv:enterShell" = {
+    #   after = ["bin:install-local"];
+    # };
+    "bash:shellHook" = {
+      exec = "LD_LIBRARY_PATH=${pkgs.stdenv.cc.cc.lib}/lib/";
+      before = ["devenv:enterShell" "devenv:enterTest"];
+    };
+  };
 
   # https://devenv.sh/tests/
   enterTest = ''
