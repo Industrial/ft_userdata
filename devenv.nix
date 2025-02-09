@@ -1,14 +1,35 @@
-{ pkgs, lib, config, inputs, ... }:
-
 {
+  pkgs,
+  lib,
+  config,
+  inputs,
+  ...
+}: {
   # https://devenv.sh/basics/
   env.GREET = "devenv";
 
   # https://devenv.sh/packages/
-  packages = [ pkgs.git ];
+  packages = with pkgs; [
+    git
+    poetry
+  ];
 
   # https://devenv.sh/languages/
   # languages.rust.enable = true;
+  languages = {
+    python = {
+      enable = true;
+      poetry = {
+        enable = true;
+        activate = {
+          enable = true;
+        };
+        install = {
+          enable = true;
+        };
+      };
+    };
+  };
 
   # https://devenv.sh/processes/
   # processes.cargo-watch.exec = "cargo-watch";
