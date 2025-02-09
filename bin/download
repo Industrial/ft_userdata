@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "> download"
+
+# --exchange binance \
+
+sudo docker compose run --rm freqtrade download-data \
+  --exchange kucoin \
+  --timerange 20200101-20251231 \
+  --timeframe 1h \
+  --pairs BTC/USDT \
+  --erase
