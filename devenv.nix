@@ -4,7 +4,34 @@
   config,
   inputs,
   ...
-}: {
+}: let
+  talib = pkgs.stdenv.mkDerivation rec {
+    pname = "ta-lib";
+    version = "0.6.1";
+    src = pkgs.fetchFromGitHub {
+      owner = "TA-Lib";
+      repo = "ta-lib";
+      rev = version;
+      sha256 = "sha256-bIzN8f9ZiOLaVzGAXcZUHUh/v9z1U+zY+MnyjJr1lSw=";
+    };
+
+    nativeBuildInputs = with pkgs; [
+      pkg-config
+      autoreconfHook
+    ];
+    hardeningDisable = ["format"];
+
+    meta = with lib; {
+      description = "TA-Lib is a library that provides common functions for the technical analysis of financial market data.";
+      mainProgram = "ta-lib-config";
+      homepage = "https://ta-lib.org/";
+      license = lib.licenses.bsd3;
+
+      platforms = platforms.linux;
+      maintainers = with maintainers; [rafael];
+    };
+  };
+in {
   # https://devenv.sh/basics/
   env.GREET = "devenv";
 
@@ -12,6 +39,7 @@
   packages = with pkgs; [
     git
     poetry
+    talib
   ];
 
   # https://devenv.sh/languages/
@@ -19,6 +47,10 @@
   languages = {
     python = {
       enable = true;
+      libraries = [
+        "${config.devenv.dotfile}/profile"
+        talib
+      ];
       poetry = {
         enable = true;
         activate = {
