@@ -1,0 +1,3 @@
+/user_data/logs/*
+/user_data/hyperopt_results/*
+/user_data/tradesv3.*
