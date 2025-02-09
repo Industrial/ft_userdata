@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "> backtest"
+
+sudo docker compose run --rm freqtrade backtesting \
+  --config user_data/config.json \
+  --strategy SampleStrategy \
+  --timerange 20240101-20250131 \
+  -i 1h
