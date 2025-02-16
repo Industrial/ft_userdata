@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "> hyperopt"
+
+STRATEGY=${STRATEGY:-"NOTankAi_15"}
+echo "> hyperopt > STRATEGY: ${STRATEGY}"
+
+TIMEFRAME=${TIMEFRAME:-"1h"}
+echo "> hyperopt > TIMEFRAME: ${TIMEFRAME}"
+
+TIMERANGE=${TIMERANGE:-"20210101-20250131"}
+echo "> hyperopt > TIMERANGE: ${TIMERANGE}"
+
+# ShortTradeDurHyperOptLoss, OnlyProfitHyperOptLoss,
+# SharpeHyperOptLoss, SharpeHyperOptLossDaily,
+# SortinoHyperOptLoss, SortinoHyperOptLossDaily,
+# CalmarHyperOptLoss, MaxDrawDownHyperOptLoss,
+# MaxDrawDownRelativeHyperOptLoss,
+# ProfitDrawDownHyperOptLoss, MultiMetricHyperOptLoss
+HYPEROPT_LOSS=${HYPEROPT_LOSS:-"ProfitDrawDownHyperOptLoss"}
+echo "> hyperopt > HYPEROPT_LOSS: ${HYPEROPT_LOSS}"
+
+HYPEROPT_SPACES=${HYPEROPT_SPACES:-"buy"}
+echo "> hyperopt > HYPEROPT_SPACES: ${HYPEROPT_SPACES}"
+
+HYPEROPT_EPOCHS=${HYPEROPT_EPOCHS:-"100"}
+echo "> hyperopt > HYPEROPT_EPOCHS: ${HYPEROPT_EPOCHS}"
+
+echo "> hyperopt > rm -rf user_data/hyperopt_results/*"
+rm -rf user_data/hyperopt_results/*
+
+sudo docker run --rm \
+  -v ${PWD}/user_data:/freqtrade/user_data \
+  -w /freqtrade \
+  freqtradeorg/freqtrade:develop_plot hyperopt \
+    --config user_data/_config.base.json \
+    --config user_data/config.hyperopt.json \
+    --strategy "${STRATEGY}" \
+    --timeframe "${TIMEFRAME}" \
+    --timerange "${TIMERANGE}" \
+    --hyperopt-loss "${HYPEROPT_LOSS}" \
+    --epochs "${HYPEROPT_EPOCHS}" \
+    --spaces "${HYPEROPT_SPACES}" \
+    --print-all \
+    --analyze-per-epoch

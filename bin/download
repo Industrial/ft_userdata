@@ -2,11 +2,17 @@
 set -euo pipefail
 echo "> download"
 
-# --exchange binance \
+STRATEGY=${STRATEGY:-"NOTankAi_15"}
+echo "> download > STRATEGY: ${STRATEGY}"
 
-sudo docker compose run --rm freqtrade download-data \
-  --exchange kucoin \
-  --timerange 20200101-20251231 \
-  --timeframe 1h \
-  --pairs BTC/USDT \
-  --erase
+TIMERANGE=${TIMERANGE:-"20210101-20250131"}
+echo "> download > TIMERANGE: ${TIMERANGE}"
+
+sudo docker run --rm \
+  -v ${PWD}/user_data:/freqtrade/user_data \
+  -w /freqtrade \
+  freqtradeorg/freqtrade:develop_plot download-data \
+    --config user_data/_config.base.json \
+    --config user_data/config.backtest.json \
+    --timerange "${TIMERANGE}" \
+    -t 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d

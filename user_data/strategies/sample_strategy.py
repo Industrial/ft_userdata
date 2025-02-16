@@ -1,426 +1,293 @@
-# pragma pylint: disable=missing-docstring, invalid-name, pointless-string-statement
-# flake8: noqa: F401
-# isort: skip_file
-# --- Do not remove these imports ---
-import numpy as np
-import pandas as pd
-from datetime import datetime, timedelta, timezone
+from operator import is_
+from typing import Optional
+from datetime import datetime
 from pandas import DataFrame
-from typing import Optional, Union
-
+from freqtrade.exchange import timeframe_to_minutes
 from freqtrade.strategy import (
     IStrategy,
-    Trade,
-    Order,
-    PairLocks,
-    informative,  # @informative decorator
-    # Hyperopt Parameters
-    BooleanParameter,
-    CategoricalParameter,
-    DecimalParameter,
     IntParameter,
-    RealParameter,
-    # timeframe helpers
-    timeframe_to_minutes,
-    timeframe_to_next_date,
-    timeframe_to_prev_date,
-    # Strategy helper functions
-    merge_informative_pair,
-    stoploss_from_absolute,
-    stoploss_from_open,
+    DecimalParameter,
+    informative,
+    Trade,
 )
-
-# --------------------------------
-# Add your lib to import here
+import freqtrade.vendor.qtpylib.indicators as qtpylib
 import talib.abstract as ta
-from technical import qtpylib
+from freqtrade.exchange import timeframe_to_seconds
 
 
-# This class is a sample. Feel free to customize it.
+# ElliottWaveOscilator
+def EWO(source, sma_length=5, sma2_length=35):
+    sma1 = ta.SMA(source, timeperiod=sma_length)
+    sma2 = ta.SMA(source, timeperiod=sma2_length)
+    smadif = (sma1 - sma2) / source * 100
+    return smadif
+
+
+def is_positive(dataframe: DataFrame, column: str):
+    return dataframe[column] > 0
+
+
+def is_trending_up(dataframe: DataFrame, column_first: str, column_second: str):
+    return dataframe[column_first] > dataframe[column_second]
+
+
+def has_crossed_above(dataframe: DataFrame, column: str, threshold: float):
+    return (dataframe[column] > threshold) & (dataframe[column].shift(1) < threshold)
+
+
 class SampleStrategy(IStrategy):
-    """
-    This is a sample strategy to inspire you.
-    More information in https://www.freqtrade.io/en/latest/strategy-customization/
-
-    You can:
-        :return: a Dataframe with all mandatory indicators for the strategies
-    - Rename the class name (Do not forget to update class_name)
-    - Add any methods you want to build your strategy
-    - Add any lib you need to build your strategy
-
-    You must keep:
-    - the lib in the section "Do not remove these libs"
-    - the methods: populate_indicators, populate_entry_trend, populate_exit_trend
-    You should keep:
-    - timeframe, minimal_roi, stoploss, trailing_*
-    """
-
-    # Strategy interface version - allow new iterations of the strategy interface.
-    # Check the documentation or the Sample strategy to get the latest version.
     INTERFACE_VERSION = 3
-
-    # Can this strategy go short?
     can_short: bool = False
 
-    # Minimal ROI designed for the strategy.
-    # This attribute will be overridden if the config file contains "minimal_roi".
-    minimal_roi = {
-        # "120": 0.0,  # exit after 120 minutes at break even
-        "60": 0.01,
-        "30": 0.02,
-        "0": 0.04,
-    }
+    timeframe = "1h"
+    timeframe_mins = timeframe_to_minutes(timeframe)
 
-    # Optimal stoploss designed for the strategy.
-    # This attribute will be overridden if the config file contains "stoploss".
-    stoploss = -0.10
+    # minimal_roi = {
+    #     str(timeframe_mins * 00): 0.0100,  # 10.00% after 0 minutes
+    #     str(timeframe_mins * 30): 0.0050,  # 7.50% After 30 minutes
+    #     str(timeframe_mins * 60): 0.0010,  # 0.01% After 60 minutes
+    # }
 
-    # Trailing stoploss
-    trailing_stop = False
-    # trailing_only_offset_is_reached = False
+    minimal_roi = {"0": 0.446, "303": 0.165, "983": 0.042, "1299": 0}
+
+    # stoploss = -0.10
+    stoploss = -0.03
+    use_custom_stoploss = False
+
+    trailing_stop = True
     # trailing_stop_positive = 0.01
-    # trailing_stop_positive_offset = 0.0  # Disabled / not configured
+    # trailing_stop_positive_offset = 0.0
+    # trailing_only_offset_is_reached = False
 
-    # Optimal timeframe for the strategy.
-    timeframe = "5m"
+    # ATR Stop Loss
+    # risk_reward_ratio = 1.00
+    # risk_reward_ratio = 0.5
+    # atr_distance = 10
+    # timeframe_minutes = timeframe_to_minutes(timeframe)
+    # custom_info_fixed_rr = dict()
+    # init_fixed_rr_dict = {
+    #     "roi": 0,
+    #     "sl": 0,
+    # }
 
-    # Run "populate_indicators()" only for new candle.
-    process_only_new_candles = True
-
-    # These values can be overridden in the config.
-    use_exit_signal = True
-    exit_profit_only = False
-    ignore_roi_if_entry_signal = False
+    # process_only_new_candles = True
+    # use_exit_signal = True
+    # exit_profit_only = True
+    # ignore_roi_if_entry_signal = False
 
     # Hyperoptable parameters
-    buy_rsi = IntParameter(low=1, high=50, default=30, space="buy", optimize=True, load=True)
-    sell_rsi = IntParameter(low=50, high=100, default=70, space="sell", optimize=True, load=True)
-    short_rsi = IntParameter(low=51, high=100, default=70, space="sell", optimize=True, load=True)
-    exit_short_rsi = IntParameter(low=1, high=50, default=30, space="buy", optimize=True, load=True)
+    # buy_rsi = IntParameter(
+    #     low=1, high=50, default=30, space="buy", optimize=True, load=True
+    # )
+    # sell_rsi = IntParameter(
+    #     low=50, high=100, default=70, space="sell", optimize=True, load=True
+    # )
 
-    # Number of candles the strategy requires before producing valid signals
-    startup_candle_count: int = 200
+    rsi_period = IntParameter(
+        low=2, high=100, default=14, space="buy", optimize=False, load=True
+    )
+    rsi_buy_threshold = IntParameter(
+        low=10, high=70, default=30, space="buy", optimize=False, load=True
+    )
+    rsi_ema_period = IntParameter(
+        low=2, high=100, default=9, space="buy", optimize=False, load=True
+    )
 
-    # Optional order type mapping.
-    order_types = {
-        "entry": "limit",
-        "exit": "limit",
-        "stoploss": "market",
-        "stoploss_on_exchange": False,
-    }
+    ewo_low_period = IntParameter(
+        low=2, high=100, default=10, space="buy", optimize=False, load=True
+    )
+    ewo_high_period = IntParameter(
+        low=51, high=100, default=100, space="buy", optimize=False, load=True
+    )
+    ewo_buy_threshold = DecimalParameter(
+        low=0.1, high=10, default=3, space="buy", optimize=False, load=True
+    )
+
+    tema_small_period = IntParameter(
+        low=1, high=10000, default=283, space="buy", optimize=False, load=True
+    )
+    tema_large_period = IntParameter(
+        low=284, high=100000, default=10000, space="buy", optimize=False, load=True
+    )
 
     # Optional order time in force.
     order_time_in_force = {"entry": "GTC", "exit": "GTC"}
 
     plot_config = {
         "main_plot": {
-            "tema": {},
-            "sar": {"color": "white"},
+            "tema_small_btc_1h": {
+                "color": "cyan",
+            },
+            "tema_large_btc_1h": {
+                "color": "blue",
+            },
         },
         "subplots": {
-            "MACD": {
-                "macd": {"color": "blue"},
-                "macdsignal": {"color": "orange"},
-            },
             "RSI": {
                 "rsi": {"color": "red"},
+                "rsi_ema": {"color": "green"},
             },
+            # "EWO": {
+            #     "ewo": {"color": "blue"},
+            # },
         },
     }
 
     def informative_pairs(self):
-        """
-        Define additional, informative pair/interval combinations to be cached from the exchange.
-        These pair/interval combinations are non-tradeable, unless they are part
-        of the whitelist as well.
-        For more information, please consult the documentation
-        :return: List of tuples in the format (pair, interval)
-            Sample: return [("ETH/USDT", "5m"),
-                            ("BTC/USDT", "15m"),
-                            ]
-        """
         return []
 
+    # @informative("1h", "BTC/{stake}")
+    # def populate_indicators_btc_1h(
+    #     self, dataframe: DataFrame, metadata: dict
+    # ) -> DataFrame:
+    #     dataframe["tema_small"] = ta.TEMA(
+    #         dataframe, timeperiod=int(self.tema_small_period.value)
+    #     )
+    #     dataframe["tema_large"] = ta.TEMA(
+    #         dataframe, timeperiod=int(self.tema_large_period.value)
+    #     )
+    #     return dataframe
+
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        """
-        Adds several different TA indicators to the given DataFrame
-
-        Performance Note: For the best performance be frugal on the number of indicators
-        you are using. Let uncomment only the indicator you are using in your strategies
-        or your hyperopt configuration, otherwise you will waste your memory and CPU usage.
-        :param dataframe: Dataframe with data from the exchange
-        :param metadata: Additional information, like the currently traded pair
-        :return: a Dataframe with all mandatory indicators for the strategies
-        """
-
-        # Momentum Indicators
-        # ------------------------------------
-
-        # ADX
-        dataframe["adx"] = ta.ADX(dataframe)
-
-        # # Plus Directional Indicator / Movement
-        # dataframe['plus_dm'] = ta.PLUS_DM(dataframe)
-        # dataframe['plus_di'] = ta.PLUS_DI(dataframe)
-
-        # # Minus Directional Indicator / Movement
-        # dataframe['minus_dm'] = ta.MINUS_DM(dataframe)
-        # dataframe['minus_di'] = ta.MINUS_DI(dataframe)
-
-        # # Aroon, Aroon Oscillator
-        # aroon = ta.AROON(dataframe)
-        # dataframe['aroonup'] = aroon['aroonup']
-        # dataframe['aroondown'] = aroon['aroondown']
-        # dataframe['aroonosc'] = ta.AROONOSC(dataframe)
-
-        # # Awesome Oscillator
-        # dataframe['ao'] = qtpylib.awesome_oscillator(dataframe)
-
-        # # Keltner Channel
-        # keltner = qtpylib.keltner_channel(dataframe)
-        # dataframe["kc_upperband"] = keltner["upper"]
-        # dataframe["kc_lowerband"] = keltner["lower"]
-        # dataframe["kc_middleband"] = keltner["mid"]
-        # dataframe["kc_percent"] = (
-        #     (dataframe["close"] - dataframe["kc_lowerband"]) /
-        #     (dataframe["kc_upperband"] - dataframe["kc_lowerband"])
-        # )
-        # dataframe["kc_width"] = (
-        #     (dataframe["kc_upperband"] - dataframe["kc_lowerband"]) / dataframe["kc_middleband"]
-        # )
-
-        # # Ultimate Oscillator
-        # dataframe['uo'] = ta.ULTOSC(dataframe)
-
-        # # Commodity Channel Index: values [Oversold:-100, Overbought:100]
-        # dataframe['cci'] = ta.CCI(dataframe)
-
-        # RSI
-        dataframe["rsi"] = ta.RSI(dataframe)
-
-        # # Inverse Fisher transform on RSI: values [-1.0, 1.0] (https://goo.gl/2JGGoy)
-        # rsi = 0.1 * (dataframe['rsi'] - 50)
-        # dataframe['fisher_rsi'] = (np.exp(2 * rsi) - 1) / (np.exp(2 * rsi) + 1)
-
-        # # Inverse Fisher transform on RSI normalized: values [0.0, 100.0] (https://goo.gl/2JGGoy)
-        # dataframe['fisher_rsi_norma'] = 50 * (dataframe['fisher_rsi'] + 1)
-
-        # # Stochastic Slow
-        # stoch = ta.STOCH(dataframe)
-        # dataframe['slowd'] = stoch['slowd']
-        # dataframe['slowk'] = stoch['slowk']
-
-        # Stochastic Fast
-        stoch_fast = ta.STOCHF(dataframe)
-        dataframe["fastd"] = stoch_fast["fastd"]
-        dataframe["fastk"] = stoch_fast["fastk"]
-
-        # # Stochastic RSI
-        # Please read https://github.com/freqtrade/freqtrade/issues/2961 before using this.
-        # STOCHRSI is NOT aligned with tradingview, which may result in non-expected results.
-        # stoch_rsi = ta.STOCHRSI(dataframe)
-        # dataframe['fastd_rsi'] = stoch_rsi['fastd']
-        # dataframe['fastk_rsi'] = stoch_rsi['fastk']
-
-        # MACD
-        macd = ta.MACD(dataframe)
-        dataframe["macd"] = macd["macd"]
-        dataframe["macdsignal"] = macd["macdsignal"]
-        dataframe["macdhist"] = macd["macdhist"]
-
-        # MFI
-        dataframe["mfi"] = ta.MFI(dataframe)
-
-        # # ROC
-        # dataframe['roc'] = ta.ROC(dataframe)
-
-        # Overlap Studies
-        # ------------------------------------
-
-        # Bollinger Bands
-        bollinger = qtpylib.bollinger_bands(qtpylib.typical_price(dataframe), window=20, stds=2)
-        dataframe["bb_lowerband"] = bollinger["lower"]
-        dataframe["bb_middleband"] = bollinger["mid"]
-        dataframe["bb_upperband"] = bollinger["upper"]
-        dataframe["bb_percent"] = (dataframe["close"] - dataframe["bb_lowerband"]) / (
-            dataframe["bb_upperband"] - dataframe["bb_lowerband"]
+        # dataframe["atr"] = ta.ATR(dataframe, timeperiod=14)
+        dataframe["rsi"] = ta.RSI(dataframe, timeperiod=int(self.rsi_period.value))
+        dataframe["rsi_ema"] = ta.RSI(
+            dataframe["rsi"], timeperiod=int(self.rsi_ema_period.value)
         )
-        dataframe["bb_width"] = (dataframe["bb_upperband"] - dataframe["bb_lowerband"]) / dataframe[
-            "bb_middleband"
-        ]
-
-        # Bollinger Bands - Weighted (EMA based instead of SMA)
-        # weighted_bollinger = qtpylib.weighted_bollinger_bands(
-        #     qtpylib.typical_price(dataframe), window=20, stds=2
-        # )
-        # dataframe["wbb_upperband"] = weighted_bollinger["upper"]
-        # dataframe["wbb_lowerband"] = weighted_bollinger["lower"]
-        # dataframe["wbb_middleband"] = weighted_bollinger["mid"]
-        # dataframe["wbb_percent"] = (
-        #     (dataframe["close"] - dataframe["wbb_lowerband"]) /
-        #     (dataframe["wbb_upperband"] - dataframe["wbb_lowerband"])
-        # )
-        # dataframe["wbb_width"] = (
-        #     (dataframe["wbb_upperband"] - dataframe["wbb_lowerband"]) /
-        #     dataframe["wbb_middleband"]
-        # )
-
-        # # EMA - Exponential Moving Average
-        # dataframe['ema3'] = ta.EMA(dataframe, timeperiod=3)
-        # dataframe['ema5'] = ta.EMA(dataframe, timeperiod=5)
-        # dataframe['ema10'] = ta.EMA(dataframe, timeperiod=10)
-        # dataframe['ema21'] = ta.EMA(dataframe, timeperiod=21)
-        # dataframe['ema50'] = ta.EMA(dataframe, timeperiod=50)
-        # dataframe['ema100'] = ta.EMA(dataframe, timeperiod=100)
-
-        # # SMA - Simple Moving Average
-        # dataframe['sma3'] = ta.SMA(dataframe, timeperiod=3)
-        # dataframe['sma5'] = ta.SMA(dataframe, timeperiod=5)
-        # dataframe['sma10'] = ta.SMA(dataframe, timeperiod=10)
-        # dataframe['sma21'] = ta.SMA(dataframe, timeperiod=21)
-        # dataframe['sma50'] = ta.SMA(dataframe, timeperiod=50)
-        # dataframe['sma100'] = ta.SMA(dataframe, timeperiod=100)
-
-        # Parabolic SAR
-        dataframe["sar"] = ta.SAR(dataframe)
-
-        # TEMA - Triple Exponential Moving Average
-        dataframe["tema"] = ta.TEMA(dataframe, timeperiod=9)
-
-        # Cycle Indicator
-        # ------------------------------------
-        # Hilbert Transform Indicator - SineWave
-        hilbert = ta.HT_SINE(dataframe)
-        dataframe["htsine"] = hilbert["sine"]
-        dataframe["htleadsine"] = hilbert["leadsine"]
-
-        # Pattern Recognition - Bullish candlestick patterns
-        # ------------------------------------
-        # # Hammer: values [0, 100]
-        # dataframe['CDLHAMMER'] = ta.CDLHAMMER(dataframe)
-        # # Inverted Hammer: values [0, 100]
-        # dataframe['CDLINVERTEDHAMMER'] = ta.CDLINVERTEDHAMMER(dataframe)
-        # # Dragonfly Doji: values [0, 100]
-        # dataframe['CDLDRAGONFLYDOJI'] = ta.CDLDRAGONFLYDOJI(dataframe)
-        # # Piercing Line: values [0, 100]
-        # dataframe['CDLPIERCING'] = ta.CDLPIERCING(dataframe) # values [0, 100]
-        # # Morningstar: values [0, 100]
-        # dataframe['CDLMORNINGSTAR'] = ta.CDLMORNINGSTAR(dataframe) # values [0, 100]
-        # # Three White Soldiers: values [0, 100]
-        # dataframe['CDL3WHITESOLDIERS'] = ta.CDL3WHITESOLDIERS(dataframe) # values [0, 100]
-
-        # Pattern Recognition - Bearish candlestick patterns
-        # ------------------------------------
-        # # Hanging Man: values [0, 100]
-        # dataframe['CDLHANGINGMAN'] = ta.CDLHANGINGMAN(dataframe)
-        # # Shooting Star: values [0, 100]
-        # dataframe['CDLSHOOTINGSTAR'] = ta.CDLSHOOTINGSTAR(dataframe)
-        # # Gravestone Doji: values [0, 100]
-        # dataframe['CDLGRAVESTONEDOJI'] = ta.CDLGRAVESTONEDOJI(dataframe)
-        # # Dark Cloud Cover: values [0, 100]
-        # dataframe['CDLDARKCLOUDCOVER'] = ta.CDLDARKCLOUDCOVER(dataframe)
-        # # Evening Doji Star: values [0, 100]
-        # dataframe['CDLEVENINGDOJISTAR'] = ta.CDLEVENINGDOJISTAR(dataframe)
-        # # Evening Star: values [0, 100]
-        # dataframe['CDLEVENINGSTAR'] = ta.CDLEVENINGSTAR(dataframe)
-
-        # Pattern Recognition - Bullish/Bearish candlestick patterns
-        # ------------------------------------
-        # # Three Line Strike: values [0, -100, 100]
-        # dataframe['CDL3LINESTRIKE'] = ta.CDL3LINESTRIKE(dataframe)
-        # # Spinning Top: values [0, -100, 100]
-        # dataframe['CDLSPINNINGTOP'] = ta.CDLSPINNINGTOP(dataframe) # values [0, -100, 100]
-        # # Engulfing: values [0, -100, 100]
-        # dataframe['CDLENGULFING'] = ta.CDLENGULFING(dataframe) # values [0, -100, 100]
-        # # Harami: values [0, -100, 100]
-        # dataframe['CDLHARAMI'] = ta.CDLHARAMI(dataframe) # values [0, -100, 100]
-        # # Three Outside Up/Down: values [0, -100, 100]
-        # dataframe['CDL3OUTSIDE'] = ta.CDL3OUTSIDE(dataframe) # values [0, -100, 100]
-        # # Three Inside Up/Down: values [0, -100, 100]
-        # dataframe['CDL3INSIDE'] = ta.CDL3INSIDE(dataframe) # values [0, -100, 100]
-
-        # # Chart type
-        # # ------------------------------------
-        # # Heikin Ashi Strategy
-        # heikinashi = qtpylib.heikinashi(dataframe)
-        # dataframe['ha_open'] = heikinashi['open']
-        # dataframe['ha_close'] = heikinashi['close']
-        # dataframe['ha_high'] = heikinashi['high']
-        # dataframe['ha_low'] = heikinashi['low']
-
-        # Retrieve best bid and best ask from the orderbook
-        # ------------------------------------
-        """
-        # first check if dataprovider is available
-        if self.dp:
-            if self.dp.runmode.value in ('live', 'dry_run'):
-                ob = self.dp.orderbook(metadata['pair'], 1)
-                dataframe['best_bid'] = ob['bids'][0][0]
-                dataframe['best_ask'] = ob['asks'][0][0]
-        """
-
+        dataframe["ewo"] = EWO(
+            dataframe["close"],
+            int(self.ewo_low_period.value),
+            int(self.ewo_high_period.value),
+        )
+        dataframe["tema_small"] = ta.TEMA(
+            dataframe, timeperiod=int(self.tema_small_period.value)
+        )
+        dataframe["tema_large"] = ta.TEMA(
+            dataframe, timeperiod=int(self.tema_large_period.value)
+        )
         return dataframe
 
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        """
-        Based on TA indicators, populates the entry signal for the given dataframe
-        :param dataframe: DataFrame
-        :param metadata: Additional information, like the currently traded pair
-        :return: DataFrame with entry columns populated
-        """
         dataframe.loc[
             (
-                # Signal: RSI crosses above 30
-                (qtpylib.crossed_above(dataframe["rsi"], self.buy_rsi.value))
-                & (dataframe["tema"] <= dataframe["bb_middleband"])  # Guard: tema below BB middle
-                & (dataframe["tema"] > dataframe["tema"].shift(1))  # Guard: tema is raising
-                & (dataframe["volume"] > 0)  # Make sure Volume is not 0
+                is_trending_up(dataframe, "tema_small", "tema_large")
+                # & has_crossed_above(dataframe, "rsi_ema", self.rsi_buy_threshold.value)
+                & has_crossed_above(dataframe, "ewo", self.ewo_buy_threshold.value)
+                & is_positive(dataframe, "volume")
             ),
             "enter_long",
-        ] = 1
-
-        dataframe.loc[
-            (
-                # Signal: RSI crosses above 70
-                (qtpylib.crossed_above(dataframe["rsi"], self.short_rsi.value))
-                & (dataframe["tema"] > dataframe["bb_middleband"])  # Guard: tema above BB middle
-                & (dataframe["tema"] < dataframe["tema"].shift(1))  # Guard: tema is falling
-                & (dataframe["volume"] > 0)  # Make sure Volume is not 0
-            ),
-            "enter_short",
         ] = 1
 
         return dataframe
 
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        """
-        Based on TA indicators, populates the exit signal for the given dataframe
-        :param dataframe: DataFrame
-        :param metadata: Additional information, like the currently traded pair
-        :return: DataFrame with exit columns populated
-        """
-        dataframe.loc[
-            (
-                # Signal: RSI crosses above 70
-                (qtpylib.crossed_above(dataframe["rsi"], self.sell_rsi.value))
-                & (dataframe["tema"] > dataframe["bb_middleband"])  # Guard: tema above BB middle
-                & (dataframe["tema"] < dataframe["tema"].shift(1))  # Guard: tema is falling
-                & (dataframe["volume"] > 0)  # Make sure Volume is not 0
-            ),
-            "exit_long",
-        ] = 1
-
-        dataframe.loc[
-            (
-                # Signal: RSI crosses above 30
-                (qtpylib.crossed_above(dataframe["rsi"], self.exit_short_rsi.value))
-                &
-                # Guard: tema below BB middle
-                (dataframe["tema"] <= dataframe["bb_middleband"])
-                & (dataframe["tema"] > dataframe["tema"].shift(1))  # Guard: tema is raising
-                & (dataframe["volume"] > 0)  # Make sure Volume is not 0
-            ),
-            "exit_short",
-        ] = 1
-
+        # is_trending_down_large = (
+        #     dataframe["btc_usdt_tema_small_1h"] < dataframe["btc_usdt_tema_large_1h"]
+        # )
+        # dataframe.loc[
+        #     (is_trending_down_large),
+        #     "exit_long",
+        # ] = 1
         return dataframe
+
+    # def custom_exit(
+    #     self,
+    #     pair: str,
+    #     trade: Trade,
+    #     current_time: datetime,
+    #     current_rate: float,
+    #     current_profit: float,
+    #     **kwargs
+    # ) -> Optional[str]:
+    #     if (current_time - trade.open_date_utc).total_seconds() >= (
+    #         60
+    #         * 60
+    #         * 24
+    #         # 50 * timeframe_to_seconds(self.timeframe)
+    #     ):
+    #         return "exit_timeout"
+    #     return None
+
+    # def confirm_trade_entry(
+    #     self,
+    #     pair: str,
+    #     order_type: str,
+    #     amount: float,
+    #     rate: float,
+    #     time_in_force: str,
+    #     current_time: datetime,
+    #     entry_tag: Optional[str],
+    #     side: str,
+    #     **kwargs
+    # ) -> bool:
+    #     if pair not in self.custom_info_fixed_rr:
+    #         self.custom_info_fixed_rr[pair] = self.init_fixed_rr_dict.copy()
+    #     dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+    #     current_candle = dataframe.iloc[-1].squeeze()
+    #     self.custom_info_fixed_rr[pair]["roi"] = current_candle["close"] + (
+    #         self.atr_distance * self.risk_reward_ratio * current_candle["atr"]
+    #     )
+    #     self.custom_info_fixed_rr[pair]["sl"] = current_candle["close"] - (
+    #         self.atr_distance * current_candle["atr"]
+    #     )
+    #     return True
+
+    # def confirm_trade_exit(
+    #     self,
+    #     pair: str,
+    #     trade: Trade,
+    #     order_type: str,
+    #     amount: float,
+    #     rate: float,
+    #     time_in_force: str,
+    #     exit_reason: str,
+    #     current_time: datetime,
+    #     **kwargs
+    # ) -> bool:
+    #     if pair in self.custom_info_fixed_rr:
+    #         self.custom_info_fixed_rr[pair] = self.init_fixed_rr_dict.copy()
+    #     return True
+
+    # def custom_exit(
+    #     self,
+    #     pair: str,
+    #     trade: Trade,
+    #     current_time: datetime,
+    #     current_rate: float,
+    #     current_profit: float,
+    #     **kwargs
+    # ) -> Optional[Union[str, bool]]:
+    #     entry_time = timeframe_to_prev_date(self.timeframe, trade.open_date_utc)
+    #     dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+    #     atr_roi = trade.get_custom_data(key="atr_roi", default=0)
+    #     atr_sl = trade.get_custom_data(key="atr_sl", default=0)
+    #     if atr_roi == 0:
+    #         # need to set the roi and sl
+    #         signal_time = entry_time - timedelta(minutes=int(self.timeframe_minutes))
+    #         signal_candle = dataframe.loc[dataframe["date"] == signal_time]
+    #         if not signal_candle.empty:
+    #             # make sure we take only a row
+    #             signal_candle = signal_candle.iloc[-1].squeeze()
+    #             atr_roi = signal_candle["close"] + (
+    #                 self.atr_distance * self.risk_reward_ratio * signal_candle["atr"]
+    #             )
+    #             atr_sl = signal_candle["close"] - (
+    #                 self.atr_distance * signal_candle["atr"]
+    #             )
+    #             trade.set_custom_data(key="atr_roi", value=atr_roi)
+    #             trade.set_custom_data(key="atr_sl", value=atr_sl)
+    #     if current_time - timedelta(minutes=int(self.timeframe_minutes)) >= entry_time:
+    #         current_candle = dataframe.iloc[-1].squeeze()
+    #         if atr_roi > 0:
+    #             if current_candle["close"] >= atr_roi:
+    #                 return "atr_roi"
+    #             if current_candle["close"] <= atr_sl:
+    #                 return "atr_sl"
+    #         else:
+    #             # Signal candle not found, use percentage as exits
+    #             current_profit = trade.calc_profit_ratio(current_candle["close"])
+    #             if current_profit > 0.01:
+    #                 return "emergency_roi"
+    #             elif current_profit < -0.04:
+    #                 return "emergency_sl"
+    #     return None

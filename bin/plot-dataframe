@@ -1,29 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
-echo "> backtest"
+echo "> plot-dataframe"
 
 STRATEGY=${STRATEGY:-"NOTankAi_15"}
-echo "> backtest > STRATEGY: ${STRATEGY}"
+echo "> plot-dataframe > STRATEGY: ${STRATEGY}"
 
 TIMEFRAME=${TIMEFRAME:-"1h"}
-echo "> backtest > TIMEFRAME: ${TIMEFRAME}"
+echo "> plot-dataframe > TIMEFRAME: ${TIMEFRAME}"
 
 TIMERANGE=${TIMERANGE:-"20210101-20250131"}
-echo "> backtest > TIMERANGE: ${TIMERANGE}"
-
-echo "> backtest > rm -rf user_data/hyperopt_results/*"
-rm -rf user_data/hyperopt_results/*
-
-echo "> backtest > rm -rf user_data/backtest_results/*"
-rm -rf user_data/backtest_results/*
+echo "> plot-dataframe > TIMERANGE: ${TIMERANGE}"
 
 sudo docker run --rm \
   -v ${PWD}/user_data:/freqtrade/user_data \
   -w /freqtrade \
-  freqtradeorg/freqtrade:develop_plot backtesting \
+  freqtradeorg/freqtrade:develop_plot plot-dataframe \
     --config user_data/_config.base.json \
     --config user_data/config.backtest.json \
     --strategy "${STRATEGY}" \
     --timeframe "${TIMEFRAME}" \
-    --timeframe-detail "5m" \
     --timerange "${TIMERANGE}"

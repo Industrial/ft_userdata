@@ -55,9 +55,11 @@ in {
     };
     python = {
       enable = true;
-      version = "3.12";
+      # version = "3.12";
+      package = pkgs.python312;
       libraries = [
         "${config.devenv.dotfile}/profile"
+        # pkgs.python312Packages.ta-lib
         talib
       ];
       poetry = {
